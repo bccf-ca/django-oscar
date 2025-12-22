@@ -355,21 +355,49 @@ class AbstractAddress(models.Model):
 
     def get_address_field_values(self, fields):
         """
-        Returns set of field values within the salutation and country.
+        Return a list of *unicode* values for hashing.
+        Python 2 safe: never return byte strings.
         """
-        field_values = [f.strip() for f in self.get_field_values(fields) if f]
-        return field_values
+        values = []
+
+        for field_name in fields:
+            value = getattr(self, field_name, None)
+            if value is None:
+                continue
+
+            # Normalize everything to unicode
+            if isinstance(value, unicode):
+                val = value.strip()
+            else:
+                try:
+                    val = unicode(value, 'utf-8').strip()
+                except TypeError:
+                    val = unicode(value).strip()
+
+            if val:
+                values.append(val)
+
+        return values
 
     def generate_hash(self):
         """
-        Returns a hash of the address, based on standard set of fields, listed
-        out in `hash_fields` property.
+        Generate a hash of the address fields.
+        Python 2 unicode-safe implementation.
         """
         field_values = self.get_address_field_values(self.hash_fields)
-        # Python 2 and 3 generates CRC checksum in different ranges, so
-        # in order to generate platform-independent value we apply
-        # `& 0xffffffff` expression.
-        return zlib.crc32(', '.join(field_values).upper().encode('UTF8')) & 0xffffffff
+
+        normalized = []
+        for v in field_values:
+            if isinstance(v, unicode):
+                normalized.append(v)
+            elif isinstance(v, str):
+                # Explicit UTF-8 decode to avoid implicit ASCII decoding
+                normalized.append(v.decode('utf-8'))
+            else:
+                normalized.append(unicode(v))
+
+        joined = u', '.join(normalized).upper()
+        return zlib.crc32(joined.encode('utf-8')) & 0xffffffff
 
     def join_fields(self, fields, separator=u", "):
         """
